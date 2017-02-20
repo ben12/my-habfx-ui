@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.Border?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.layout.StackPane?>
+
+<StackPane xmlns:fx="http://javafx.com/fxml/1" stylesheets="com/ben12/openhab/ui/style.css"
+	fx:controller="com.ben12.openhab.controller.impl.TopItemsController">
+
+	<VBox fx:id="infosPane" fillWidth="true" spacing="10">
+		<StackPane.margin>
+			<Insets bottom="20" left="20" right="20" top="20" />
+		</StackPane.margin>
+		<children>
+			<Label fx:id="item1Label" maxWidth="Infinity" maxHeight="Infinity" VBox.vgrow="ALWAYS" alignment="CENTER" />
+			<Label fx:id="item2Label" maxWidth="Infinity" maxHeight="Infinity" VBox.vgrow="ALWAYS" alignment="CENTER" />
+			<Label fx:id="item3Label" maxWidth="Infinity" maxHeight="Infinity" VBox.vgrow="ALWAYS" alignment="CENTER" />
+		</children>
+	</VBox>
+</StackPane>

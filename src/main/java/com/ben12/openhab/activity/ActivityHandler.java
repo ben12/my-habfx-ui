@@ -17,6 +17,10 @@
 
 package com.ben12.openhab.activity;
 
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.file.Paths;
+import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,7 +30,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.ws.rs.client.InvocationCallback;
 
+import com.ben12.openhab.controller.ContentController;
+import com.ben12.openhab.controller.MainViewController;
+import com.ben12.openhab.controller.impl.TopItemsController;
 import com.ben12.openhab.model.Item;
+import com.ben12.openhab.model.Page;
 import com.ben12.openhab.plugin.HabApplicationPlugin;
 import com.ben12.openhab.plugin.OpenHabRestClientPlugin;
 import com.ben12.openhab.rest.OpenHabRestClient;
@@ -37,9 +45,14 @@ import com.pi4j.io.gpio.GpioPinPwmOutput;
 import com.pi4j.io.gpio.Pin;
 import com.pi4j.io.gpio.RaspiPin;
 
+import javafx.application.Platform;
 import javafx.event.Event;
 import javafx.event.EventHandler;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.Region;
 import javafx.stage.Window;
 
 /**
@@ -58,6 +71,12 @@ public class ActivityHandler implements HabApplicationPlugin, OpenHabRestClientP
 	private static final int			PRESENT			= 2;
 
 	private static final Pin			PIN				= RaspiPin.GPIO_01;
+
+	private Scene						mainScene;
+
+	private Parent						mainRoot;
+
+	private Parent						idlingRoot;
 
 	private static ActivityHandler		instance;
 
@@ -100,6 +119,8 @@ public class ActivityHandler implements HabApplicationPlugin, OpenHabRestClientP
 	{
 		if (instance == this)
 		{
+			mainScene = window.getScene();
+			mainRoot = window.getScene().getRoot();
 			window.addEventFilter(Event.ANY, this);
 
 			executor = Executors.newSingleThreadScheduledExecutor();
@@ -117,11 +138,79 @@ public class ActivityHandler implements HabApplicationPlugin, OpenHabRestClientP
 		if (instance == this)
 		{
 			openHabRestClient = restClient;
+			initIdlingView();
 		}
 		else
 		{
 			instance.init(restClient);
 		}
+	}
+
+	private void initIdlingView()
+	{
+		final Properties configuration = new Properties();
+		final String config = System.getProperty("config.file");
+		if (Paths.get(config).toFile().isFile())
+		{
+			try (FileReader reader = new FileReader(config))
+			{
+				configuration.load(reader);
+			}
+			catch (final IOException e)
+			{
+				e.printStackTrace();
+			}
+		}
+
+		final MainViewController mainViewController = new MainViewController()
+		{
+			@Override
+			public OpenHabRestClient getRestClient()
+			{
+				return openHabRestClient;
+			}
+
+			@Override
+			public Page getHomepage()
+			{
+				return null;
+			}
+
+			@Override
+			public Region getDefaultInfosView()
+			{
+				return null;
+			}
+
+			@Override
+			public Properties getConfig()
+			{
+				return configuration;
+			}
+
+			@Override
+			public void display(final ContentController<?> contentController)
+			{
+			}
+		};
+
+		final FXMLLoader loader = new FXMLLoader();
+		loader.setLocation(ActivityHandler.class.getResource("TopItems.fxml"));
+		try
+		{
+			idlingRoot = (Parent) loader.load();
+			((TopItemsController) loader.getController()).init(null, mainViewController);
+
+			if (((TopItemsController) loader.getController()).isEmpty())
+			{
+				idlingRoot = null;
+			}
+		}
+		catch (final IOException e)
+		{
+			e.printStackTrace();
+		}
+
 	}
 
 	private boolean isPresentMode()
@@ -183,6 +272,8 @@ public class ActivityHandler implements HabApplicationPlugin, OpenHabRestClientP
 
 				if (idleState == PRESENT)
 				{
+					Platform.runLater(() -> mainScene.setRoot(mainRoot));
+
 					pin.setPwm(500);
 				}
 			}
@@ -207,6 +298,11 @@ public class ActivityHandler implements HabApplicationPlugin, OpenHabRestClientP
 
 				future.cancel(false);
 				future = executor.schedule(this, MINUTES_IDLE, TimeUnit.MINUTES);
+
+				if (idlingRoot != null)
+				{
+					Platform.runLater(() -> mainScene.setRoot(idlingRoot));
+				}
 
 				pin.setPwm(150);
 				break;
