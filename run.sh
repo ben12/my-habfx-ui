@@ -30,6 +30,7 @@ case "$1" in
       -Dmonocle.input.0/0/0/0.maxY=320 \
       -Dmonocle.input.0/0/0/0.flipXY=false \
       -Dconfig.file=configTest.properties \
+      -Djava.util.logging.config.file=logging.properties \
       com.ben12.openhab.HabApplication &
     ;;
   stop)
