@@ -50,6 +50,8 @@ public class DHT22
     // the data afterwards.
     private static final int                 DHT_PULSES   = 41;
 
+    private static final int                 BUFFER_SIZE  = DHT_PULSES * 2;
+
     private static final long                DELAY        = 500;
 
     private final GpioPinDigitalMultipurpose pin;
@@ -83,13 +85,85 @@ public class DHT22
         return humidity;
     }
 
+    private int countLowPulse()
+    {
+        int count = 0;
+        while (pin.isLow())
+        {
+            if (++count >= DHT_MAXCOUNT)
+            {
+                // Timeout waiting for response.
+                return -1;
+            }
+        }
+        return count;
+    }
+
+    private int countHighPulse()
+    {
+        int count = 0;
+        while (pin.isHigh())
+        {
+            if (++count >= DHT_MAXCOUNT)
+            {
+                // Timeout waiting for response.
+                return -1;
+            }
+        }
+        return count;
+    }
+
+    private int askForMesure(final AtomicInteger result)
+    {
+        // Set pin low for ~20 milliseconds.
+        pin.low();
+        Gpio.delay(20);
+
+        // Set pin at input.
+        pin.setMode(PinMode.DIGITAL_INPUT);
+        Gpio.delayMicroseconds(10);
+
+        // Wait for DHT to pull pin low.
+        final int count = countHighPulse();
+        if (count < 0)
+        {
+            // Timeout waiting for response.
+            return 1;
+        }
+        return 0;
+    }
+
+    private int recordPulseWidths(final int[] pulseCounts)
+    {
+        // Record pulse widths for the expected result bits.
+        for (int i = 0; i < BUFFER_SIZE; i += 2)
+        {
+            // Count how long pin is low and store in pulseCounts[i]
+            pulseCounts[i] = countLowPulse();
+            if (pulseCounts[i] < 0)
+            {
+                // Timeout waiting for response.
+                return 2;
+            }
+
+            // Count how long pin is high and store in pulseCounts[i+1]
+            pulseCounts[i + 1] = countHighPulse();
+            if (pulseCounts[i + 1] < 0)
+            {
+                // Timeout waiting for response.
+                return 3;
+            }
+        }
+        return 0;
+    }
+
     public synchronized int read()
     {
         final AtomicInteger result = new AtomicInteger(10);
 
         // Store the count that each DHT bit pulse is low and high.
         // Make sure array is initialized to start at zero.
-        final int[] pulseCounts = new int[DHT_PULSES * 2];
+        final int[] pulseCounts = new int[BUFFER_SIZE];
 
         final int[] data = new int[5];
 
@@ -100,55 +174,24 @@ public class DHT22
             {
                 try
                 {
-                    // Set pin low for ~20 milliseconds.
-                    pin.low();
-                    Gpio.delay(20);
-
-                    // Set pin at input.
-                    pin.setMode(PinMode.DIGITAL_INPUT);
-                    Gpio.delayMicroseconds(10);
-
-                    // Wait for DHT to pull pin low.
-                    long count = 0;
-                    while (pin.isHigh())
+                    final int askResult = askForMesure(result);
+                    if (askResult != 0)
                     {
-                        if (++count >= DHT_MAXCOUNT)
-                        {
-                            // Timeout waiting for response.
-                            result.set(1);
-                            return;
-                        }
+                        result.set(askResult);
+                        return;
                     }
 
-                    // Record pulse widths for the expected result bits.
-                    for (int i = 0; i < DHT_PULSES * 2; i += 2)
+                    final int recResult = recordPulseWidths(pulseCounts);
+                    if (recResult != 0)
                     {
-                        // Count how long pin is low and store in pulseCounts[i]
-                        while (pin.isLow())
-                        {
-                            if (++pulseCounts[i] >= DHT_MAXCOUNT)
-                            {
-                                // Timeout waiting for response.
-                                result.set(2);
-                                return;
-                            }
-                        }
-                        // Count how long pin is high and store in pulseCounts[i+1]
-                        while (pin.isHigh())
-                        {
-                            if (++pulseCounts[i + 1] >= DHT_MAXCOUNT)
-                            {
-                                // Timeout waiting for response.
-                                result.set(3);
-                                return;
-                            }
-                        }
+                        result.set(recResult);
+                        return;
                     }
 
                     // Compute the average low pulse width to use as a 50 microsecond reference threshold.
                     // Ignore the first two readings because they are a constant 80 microsecond pulse.
                     long threshold = 0;
-                    for (int i = 2; i < DHT_PULSES * 2; i += 2)
+                    for (int i = 2; i < BUFFER_SIZE; i += 2)
                     {
                         threshold += pulseCounts[i];
                     }
@@ -157,7 +200,7 @@ public class DHT22
                     // Interpret each high pulse as a 0 or 1 by comparing it to the 50us reference.
                     // If the count is less than 50us it must be a ~28us 0 pulse, and if it's higher
                     // then it must be a ~70us 1 pulse.
-                    for (int i = 3; i < DHT_PULSES * 2; i += 2)
+                    for (int i = 3; i < BUFFER_SIZE; i += 2)
                     {
                         final int index = (i - 3) / 16;
                         data[index] <<= 1;
@@ -213,10 +256,6 @@ public class DHT22
             Gpio.delay(remaining);
         }
 
-        // try to run GC now to it not preempt us later
-        System.gc();
-        Thread.yield();
-
         try
         {
             try
@@ -226,21 +265,16 @@ public class DHT22
                     final CountDownLatch latch = new CountDownLatch(1);
 
                     // Pause UI treatments
-                    Platform.runLater(new Runnable()
-                    {
-                        @Override
-                        public void run()
+                    Platform.runLater(() -> {
+                        t.start();
+                        latch.countDown();
+                        try
                         {
-                            t.start();
-                            latch.countDown();
-                            try
-                            {
-                                t.join(2000);
-                            }
-                            catch (final InterruptedException e)
-                            {
-                                LOGGER.log(Level.SEVERE, "", e);
-                            }
+                            t.join(2000);
+                        }
+                        catch (final InterruptedException e)
+                        {
+                            LOGGER.log(Level.SEVERE, "", e);
                         }
                     });
 
@@ -257,11 +291,11 @@ public class DHT22
                 t.start();
             }
 
-            t.join(2000);
+            t.join(10000);
             if (t.isAlive())
             {
                 t.interrupt();
-                t.join(2000);
+                t.join(10000);
             }
         }
         catch (final InterruptedException e)
