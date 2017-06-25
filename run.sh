@@ -20,18 +20,19 @@ case "$1" in
     gpio -g pwm 18 400
     fbcp &
     cd /home/pi/Desktop && \
-    java -cp libs/*:./* \
-      -XX:ThreadPriorityPolicy=1 \
-      -XX:+UseThreadPriorities \
-      -Dsun.net.http.allowRestrictedHeaders=true \
-      -Dmonocle.input.0/0/0/0.minX=0 \
-      -Dmonocle.input.0/0/0/0.maxX=240 \
-      -Dmonocle.input.0/0/0/0.minY=0 \
-      -Dmonocle.input.0/0/0/0.maxY=320 \
-      -Dmonocle.input.0/0/0/0.flipXY=false \
-      -Dconfig.file=configTest.properties \
-      -Djava.util.logging.config.file=logging.properties \
-      com.ben12.openhab.HabApplication &
+    nice -n -10 \
+      java -cp libs/*:./* \
+        -XX:ThreadPriorityPolicy=1 \
+        -XX:+UseThreadPriorities \
+        -Dsun.net.http.allowRestrictedHeaders=true \
+        -Dmonocle.input.0/0/0/0.minX=0 \
+        -Dmonocle.input.0/0/0/0.maxX=240 \
+        -Dmonocle.input.0/0/0/0.minY=0 \
+        -Dmonocle.input.0/0/0/0.maxY=320 \
+        -Dmonocle.input.0/0/0/0.flipXY=false \
+        -Dconfig.file=configTest.properties \
+        -Djava.util.logging.config.file=logging.properties \
+        com.ben12.openhab.HabApplication &
     ;;
   stop)
     echo "Stopping run.sh"
